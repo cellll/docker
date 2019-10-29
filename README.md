@@ -146,7 +146,7 @@ docker pull xiilab/dist_inference
 
 
 
-### docker-swarm.yml
+### docker-compose-swarm.yml
 
 ```
 version: '3.2'
@@ -191,7 +191,7 @@ volumes:
 
 ### usage
 
-> docker stack deploy -c docker-swarm.yml ${SERVICE_NAME}<br>
+> docker stack deploy -c docker-compose-swarm.yml ${SERVICE_NAME}<br>
 > python kafka_producer.py ${SWARM_MASTER_IP}:39092 ${KAFKA_TOPIC}<br>
 > /root/result/-.txt 결과 확인
 
