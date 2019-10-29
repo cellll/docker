@@ -1,0 +1,31 @@
+version: '2'
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+  kafka:
+    build: .
+    ports:
+      - "39092:9092"
+    depends_on:
+      - "zookeeper"
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: 192.168.1.91
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "testtopic:4:1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  inference:
+    image: xiilab/dist_inference
+    depends_on:
+      - "kafka"
+    environment:
+      KAFKA_BROKER: 192.168.1.91:39092
+      KAFKA_TOPIC: testtopic
+      KAFKA_CONSUMER_GROUP: testgroup
+      KAFKA_TOPIC_PART: 4
+      GPU_MEMORY_FRACTION: 0.2
+
+    volumes:
+      - /root/result:/root/result

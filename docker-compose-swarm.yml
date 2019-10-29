@@ -1,0 +1,54 @@
+version: '3.2'
+services:
+  zookeeper:
+    image: wurstmeister/zookeeper
+    ports:
+      - target: 2181
+        published: 2181
+        protocol: tcp
+        mode: host
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == xiilab-dgen
+
+  kafka:
+    image: xiilab/kafka
+    ports:
+      - target: 9092
+        published: 39092
+        protocol: tcp
+        mode: host
+    deploy:
+      placement:
+        constraints:
+          - node.hostname == xiilab-dgen
+    depends_on:
+      - "zookeeper"
+    environment:
+      KAFKA_ADVERTISED_HOST_NAME: 192.168.1.91
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "testtopic:4:1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  inference:
+    image: xiilab/dist_inference
+    depends_on:
+      - "kafka"
+    deploy:
+      replicas: 4
+    environment:
+      KAFKA_BROKER: 192.168.1.91:39092
+      KAFKA_TOPIC: testtopic
+      KAFKA_CONSUMER_GROUP: testgroup
+      KAFKA_TOPIC_PART: 4
+      GPU_MEMORY_FRACTION: 0.2
+    volumes:
+      - /root/result:/root/result
+      - nvidia_driver_390_25:/usr/local/nvidia:ro
+      
+      
+volumes:
+  nvidia_driver_390_25:
+    external: true
+    

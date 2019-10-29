@@ -1,204 +1,94 @@
-<pre><code>
+### kubernetes
+
+
+- kubectl get nodes : 연결된 노드 출력
+- kubectl run kubernetes-bootcamp --image=docker.io/jocatalin/kubernetes-bootcamp:v1 --port=8080  -> deployment 실행
+- kubectl get deployments
+- kubectl proxy : 호스트-kubernetes cluster 연결 : direct access to the API 라고 한다
+- export POD_NAME=$(kubectl get pods -o go-template --template '{{range .items}}{{.metadata.name}}{{"\n"}}{{end}}') -> pod name 
+
+- kubectl get pods : pods 보기
+- kubectl describe pods : 자세히
+- kubectl logs $POD_NAME : 로그
+- kubectl exec $POD_NAME env : 컨테이너 내에서 env 명령어를 실행해서 출력
+- kubectl exec -ti $POD_NAME bash -> docker exec bash랑 같은 방식
+
+- kubectl get services : services 출력
+- kubectl expose deployment/kubernetes-bootcamp --type="NodePort" --port 8080 : EXPOSE 8080과 같은 동작
+
+  > pods에 서비스를 걸어야 각각 pod 에 외부에서 접근가능
+  > deployment 가 replica 2 일 때 deployment에 서비스를 걸면 2개 pods 에 랜덤으로 접근
+
+
+- kubectl scale deployments/DEPLOYMENT_NAME --replicas=4 하면 Pods 가 4개 생성됨 Deployments 안에 Pods 있음
+
+- kubectl set image deployments/kubernetes-bootcamp kubernetes-bootcamp=jocatalin/kubernetes-bootcamp:v2  -> 기존 컨테이너는 종료되고 새로운 이미지로 컨테이너를 새로 생성 (Pods도 종료되고 새로)
+
+- kubectl describe services/kubernetes-bootcamp
+- kubectl describe deployments/deployment1
+
+- NodePort 로 expose 후 curl IP:$NODE_PORT -> 웹서비스 결과 확인
+
+- kubectl rollout status deployments/kubernetes-bootcamp -> roll out 됨 commit 비슷한거 같은 것으로 추정
+
+- kubectl create deployment nginx --image nginx 
+<br>= kubectl run nginx --image nginx
+
+
+# Kubernetes 설치 테스트
+
+https://kubernetes.io/docs/setup/independent/install-kubeadm/
+
+- kubeadm : cluster bootstrap 역할
+- kubelet : 클러스터 내 모든 노드에서 실행됨, Pods, container 생성(관리?) 역할
+- kubectl : command cli
+
+
+- Docker version : docker-ce 17.03
+<pre><code>apt-get update && apt-get install -y docker-ce=$(apt-cache madison docker-ce | grep 17.03 | head -1 | awk '{print $3}’)
+apt-get install -y nvidia-docker2=2.0.0+docker17.03.2-1
 </code></pre>
 
-### Docker container내부 디스플레이 연결
-
-컨테이너 빌드 시 
-<pre><code>apt-get install -y libcanberra-gtk-module packagekit-gtk3-module
-</code></pre>
-
-컨테이너 실행 시 
-<pre><code>-v /tmp/.X11-unix:/tmp/.X11-unix
--e DISPLAY=$DISPLAY 
-</code></pre>
 
 
-### container 삭제
-
-모두 삭제 
-
-<pre><code>docker stop $(docker ps -a -q)
-docker rm $(docker ps -a -q)
-docker ps -a
-</code></pre>
-exited만 삭제
-<pre><code>docker rm $(docker ps -q -f status=exited)
-</code></pre>
-
-### privileged 에러 해결
-<pre><code>setenforce 0
-</code></pre>
-
-
-### Nvidia runtime
-nvidia-container-runtime 설치 후 <br>
-/etc/docker/daemon.json 파일 내용 추가
-<pre><code>{
-    "default-runtime": "nvidia",
-    "runtimes": {
-        "nvidia": {
-            "path": "/usr/bin/nvidia-container-runtime",
-            "runtimeArgs": []
-        }
-    }
-}
-</code></pre>
-
-<pre><code>sudo pkill -SIGHUP dockerd
-sudo systemctl daemon-reload
-sudo systemctl restart docker
-</code></pre>
-
-
-
-
-# Docker swarm, compose inference 배포 테스트
-
-
-##### 테스트 환경
-
-Ubuntu 16.04.1 LTS (Xenial Xerus) <br>
-docker version 18.03.0-ce, build 0520e24 <br>
-nvidia-docker2=2.0.3+docker18.03.0-1 <br>
-nvidia-smi 390.25 <br>
-cuda 8.0 <br>
-cudnn 6.0 <br>
-
-
-##### Every node
-```
-apt-get install -y nvidia-container-runtime
-
-sudo tee /etc/docker/daemon.json <<EOF
-{
-    "runtimes": {
-        "nvidia": {
-            "path": "/usr/bin/nvidia-container-runtime",
-            "runtimeArgs": []
-        }
-    }
-}
+1. install kubeadm, kubectl, kubelet
+<pre><code>apt-get update && apt-get install -y apt-transport-https
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
+deb http://apt.kubernetes.io/ kubernetes-xenial main
 EOF
-sudo pkill -SIGHUP dockerd
+apt-get update
+apt-get install -y kubelet kubeadm kubectl
+</code></pre>
 
-sudo systemctl daemon-reload
-sudo systemctl restart docker
-```
+2. master node 초기화
+<pre><code>iptables -F
+swapoff -a
+kubeadm init</code></pre>
 
-```
-docker pull wurstmeister/zookeeper
-docker pull xiilab/kafka
-docker pull xiilab/dist_inference
-```
-
-
-
-
-## Docker compose : distributed inference in single node
+![Alt](kube_img/kubeinit.png)
+<pre><code>export KUBECONFIG=/etc/kubernetes/admin.conf
+</code></pre>
 
 
-### docker-compose.yml
+3. pod network 설치
 
-```
-    kafka:
-        ...
-        environment:
-        KAFKA_ADVERTISED_HOST_NAME: $(IP)
-        ...
-    inference:
-        image: xiilab/dist_inference
-        ...
-        environment:
-            KAFKA_BROKER: $(IP):39092
-            GPU_MEMORY_FRACTION: (0.1 ~ 1)
-        ...            
-        volumes:
-        - $(result_dir):/root/result
+- pod 끼리 통신할 때 필요
+- For flannel to work correctly, --pod-network-cidr=10.244.0.0/16 has to be passed to kubeadm init.
+flannel works on amd64, arm, arm64 and ppc64le, but for it to work on a platform other than amd64 you have to manually download the manifest and replace amd64 occurences with your chosen platform.
+Set /proc/sys/net/bridge/bridge-nf-call-iptables to 1 by running sysctl net.bridge.bridge-nf-call-iptables=1 to pass bridged IPv4 traffic to iptables’ chains. This is a requirement for some CNI plugins to work, for more information please see here.
 
-```
-
-##### usage
-> mkdir /root/result<br>
-> docker-compose up --scale inference=4<br>
-> python kafka_producer.py $(IP):39092 testtopic<br>
-> /root/result<br>
+<pre><code>kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/v0.9.1/Documentation/kube-flannel.yml
+</code></pre>
 
 
----
+4. cluster 접속
 
-## distributed inference in multi node (swarm mode)
-
-### master node 
-
-> docker swarm init
-
-![Alt](/img/docker_swarm_init.png)
+<pre><code>kubeadm join --token <token> <master-ip>:<master-port> --discovery-token-ca-cert-hash sha256:<hash>
+</code></pre>
 
 
-### slave node
+** master에 pod 올릴 때
 
-> docker swarm join --token SWMTKN-1-3dvwm2lzqoh02ae2jvn2qv724g63zsbgko3iq0r4ym3tv24zow-7bi5i6qozb8ww945hkklzyfs7 192.168.1.91:2377
-
-![Alt](/img/docker_swarm_join.png)
-
-### master node
-
-> docker node ls  :  swarm 연결 확인
-
-![Alt](/img/docker_node_ls.png)
-
-
-
-### docker-swarm.yml
-
-```
-version: '3.2'
-services:
-  zookeeper:
-    ...
-    deploy:
-      placement:
-        constraints:
-          - node.hostname == ${SWARM_MASTER_HOSTNAME}
-    ...
-    
-  kafka:
-    ...
-    deploy:
-      placement:
-        constraints:
-          - node.hostname == ${SWARM_MASTER_HOSTNAME}
-    ...
-    environment:
-      KAFKA_ADVERTISED_HOST_NAME: ${SWARM_MASTER_IP}
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_CREATE_TOPICS: "${KAFKA_TOPIC}:4:1"
-    ...
-  inference:
-    ...
-    deploy:
-      replicas: ${INFERENCE_CONTAINER_REPLICAS}
-    environment:
-      KAFKA_BROKER: ${SWARM_MASTER_IP}:39092
-      KAFKA_TOPIC: ${KAFKA_TOPIC}
-      KAFKA_CONSUMER_GROUP: ${KAFKA_GROUP}
-      KAFKA_TOPIC_PART: ${INFERENCE_CONTAINER_REPLICAS}
-      GPU_MEMORY_FRACTION: ${MEMORY_FRACTION}
-    ...
-
-volumes:
-  nvidia_driver_390_25:
-    external: true
-
-```
-
-### usage
-
-> docker stack deploy -c docker-swarm.yml ${SERVICE_NAME}<br>
-> python kafka_producer.py ${SWARM_MASTER_IP}:39092 ${KAFKA_TOPIC}<br>
-> /root/result/-.txt 결과 확인
-
-
-### link
-https://drive.google.com/file/d/1TdrFgCd8engtJAWcaq47MvtBbuMdHw8r/view?usp=sharing<br>
-https://github.com/wurstmeister/kafka-docker
+<pre><code>kubectl taint nodes --all node-role.kubernetes.io/master-
+</code></pre>
